@@ -3,8 +3,9 @@ import numpy as np
 import time
 import os
 import mss
-import pyautogui
 import cv2
+import subprocess
+
 import logging
 import make_logger
 
@@ -18,19 +19,46 @@ os.environ['WAY_EXTRACT_FILES'] = str(current_dir/'extract_files')
 make_logger.make()
 logger = logging.getLogger('DATAMINER:dms')
 
-def main():
-	
-	def click_clack():
-		pyautogui.mouseDown(button='right')
-		time.sleep(0.05)
-		pyautogui.mouseUp(button='right')
+def get_mouse_position():
+    result = subprocess.run(
+    	['xdotool', 'getmouselocation'],
+    	capture_output=True,
+    	text=True
+    )
 
-	screen_width, screen_height = pyautogui.size()
+    parts = result.stdout.strip().split()
+    x = int(parts[0].split(':')[1])
+    y = int(parts[1].split(':')[1])
+
+    return [x, y]
+
+def click_clack():
+	before = get_mouse_position()
+	logger.info(f"Before click: {before}")
+
+	subprocess.run(['xdotool', 'click', '3'])
+
+	time.sleep(0.2)
+
+	after = get_mouse_position()
+	logger.info(f"After click: {after}")
+
+def main():
+
+	monitor_number=1
+	add_top = 1024
+	add_left = 1280
+
+	with mss.MSS() as sct:
+		monitor = sct.monitors[monitor_number]
+		screen_width = monitor['width']
+		screen_height = monitor['height']
+
+	logger.info(f'screen_width = {screen_width} | screen_height = {screen_height}')
 
 	lower_red_white = np.array([0, 0, 100])  # Нижняя граница красного/белого
 	upper_red_white = np.array([255, 255, 255])  # Верхняя граница красного/белого
 
-	multiple_channel = 4
 	size_of_window = 0.175
 
 	with mss.MSS() as sct:
@@ -54,8 +82,8 @@ def main():
 		#Поиск объекта
 		width = int(screen_width*0.10)
 		height = int(screen_height*0.25)
-		top = int(screen_height*0.30) - height//2
-		left = int(screen_width*0.50) - width//2
+		top = add_top + int(screen_height*0.30) - height//2
+		left = add_left + int(screen_width*0.50) - width//2
 
 		monitor = {
 			"top": top,
@@ -96,8 +124,9 @@ def main():
 
 		my_event = False
 		ma_count = 0
-		work_average_window = 5
-		min_count = 200
+		multiple_channel = 3
+		work_average_window = 50
+		min_count = 1000
 		average_value_list = []
 		average_delta_list = []
 		average_value = 0
@@ -144,19 +173,25 @@ def main():
 				a_v = int(average_value)
 				a_d = int(average_delta)
 
-				logger.info(f's: {s_v} ({w_a_s_v}) | as: {a_v} | d: {a_d} | wma {ma_count}')
+				maxBoard = int(max_board)
+				minBoard = int(min_board)
+
+				logger.info(f's: max[{maxBoard}] | {s_v} ({w_a_s_v}) | min[{minBoard}] | as: {a_v} | d: {a_d} | wma {ma_count}')
 
 				# Если объект выходит за диапазона канала колебаний
 				if (work_average_stream_value < min_board):
 					my_event = True
-					print("Объект пропал! Выполняем действие.")
+					logger.info("Объект пропал! Выполняем действие.")
 
 				if my_event:
 					click_clack()
-					time.sleep(1)
+					time.sleep(2)
 					click_clack()
-					time.sleep(3)
+					time.sleep(2)
 					my_event = False
+					average_delta_list = []
+					ma_count = 0
+					logger.info(f'clear => average_delta_list = {average_delta_list} | ma_count = {ma_count}')
 
 			else:
 				logger.info(f'window_ma {ma_count}')
